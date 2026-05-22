@@ -1,0 +1,40 @@
+{
+  "name": "@wsctl/gateway",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --env-file ../../.env.development src/server.ts",
+    "start:prod": "tsx --env-file ../../.env.production src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@wsctl/core": "workspace:*",
+    "adbkit": "^2.11.1",
+    "cookie": "^1.1.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "csurf": "^1.11.0",
+    "express": "^4.21.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.20.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/cookie": "^1.0.0",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/supertest": "^6.0.3",
+    "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.1.7",
+    "supertest": "^7.1.1",
+    "tsx": "^4.19.2",
+    "vitest": "^4.1.7"
+  }
+}

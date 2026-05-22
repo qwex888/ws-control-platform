@@ -1,0 +1,57 @@
+services:
+  ws-control:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ws-control-platform
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - NODE_ENV=production
+      - PORT=33721
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-admin123}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8080}
+      - ADB_HOST=127.0.0.1
+      - ADB_PORT=5037
+    volumes:
+      - ws-control-data:/app/data
+    # USB 设备直通（物理 USB 连接 Android 设备时需要）
+    privileged: true
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+
+  # ---------- ADB over TCP 模式（可选） ----------
+  # 如果通过网络连接 Android 设备，取消注释以下配置，
+  # 并注释掉上方的 privileged + devices
+  #
+  # 使用方式：先在设备上执行 adb tcpip 5555，
+  # 然后在容器内执行 adb connect <device-ip>:5555
+  #
+  # ws-control-tcp:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: ws-control-platform
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:80"
+  #   environment:
+  #     - NODE_ENV=production
+  #     - PORT=33721
+  #     - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+  #     - AUTH_USERNAME=${AUTH_USERNAME:-admin}
+  #     - AUTH_PASSWORD=${AUTH_PASSWORD:-admin123}
+  #     - COOKIE_SECURE=${COOKIE_SECURE:-false}
+  #     - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8080}
+  #     - ADB_HOST=127.0.0.1
+  #     - ADB_PORT=5037
+  #   volumes:
+  #     - ws-control-data:/app/data
+  #   network_mode: host
+
+volumes:
+  ws-control-data:

@@ -1,0 +1,38 @@
+{
+  "qwex888::192.168.2.71:5555::192.168.2.71:5555": {
+    "serial": "192.168.2.71:5555",
+    "transportId": "192.168.2.71:5555",
+    "config": {
+      "fps": 25,
+      "bitrate": 8000000,
+      "maxSize": 1080,
+      "orientationLock": "free",
+      "captureMode": "mirror",
+      "virtualDisplay": "",
+      "secureCaptureMode": "default"
+    }
+  },
+  "qwex888::10AF7912Y4003YL::10AF7912Y4003YL": {
+    "serial": "10AF7912Y4003YL",
+    "transportId": "10AF7912Y4003YL",
+    "config": {
+      "fps": 24,
+      "bitrate": 8000000,
+      "maxSize": 1080,
+      "orientationLock": "free"
+    }
+  },
+  "qwex888::192.168.31.254:5555::192.168.31.254:5555": {
+    "serial": "192.168.31.254:5555",
+    "transportId": "192.168.31.254:5555",
+    "config": {
+      "fps": 24,
+      "bitrate": 8000000,
+      "maxSize": 1080,
+      "orientationLock": "free",
+      "captureMode": "mirror",
+      "virtualDisplay": "",
+      "secureCaptureMode": "default"
+    }
+  }
+}
