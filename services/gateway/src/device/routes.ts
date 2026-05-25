@@ -3,7 +3,11 @@ import { DeviceConfigRepo } from './repo'
 import { deviceConnectPayloadSchema, type DeviceConfigKey } from './schema'
 import { checkAdbStatus, checkRootStatus, connectWireless, disconnectWireless } from '../adb/wireless'
 
-export const createDeviceRouter = (repo: DeviceConfigRepo) => {
+type DeviceRouterOptions = {
+  onDeviceListChanged?: () => void
+}
+
+export const createDeviceRouter = (repo: DeviceConfigRepo, options?: DeviceRouterOptions) => {
   const router = Router()
 
   router.get('/config', (req, res) => {
@@ -114,6 +118,9 @@ export const createDeviceRouter = (repo: DeviceConfigRepo) => {
     try {
       const result = await connectWireless(host, port)
       res.json({ success: result.success, data: { message: result.message }, error: result.success ? null : result.message })
+      if (result.success && options?.onDeviceListChanged) {
+        setTimeout(() => options.onDeviceListChanged!(), 800)
+      }
     } catch (err) {
       res.status(500).json({ success: false, data: null, error: String(err) })
     }
@@ -129,6 +136,9 @@ export const createDeviceRouter = (repo: DeviceConfigRepo) => {
     try {
       const result = await disconnectWireless(address)
       res.json({ success: result.success, data: { message: result.message }, error: result.success ? null : result.message })
+      if (result.success && options?.onDeviceListChanged) {
+        setTimeout(() => options.onDeviceListChanged!(), 500)
+      }
     } catch (err) {
       res.status(500).json({ success: false, data: null, error: String(err) })
     }

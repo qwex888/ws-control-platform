@@ -24,19 +24,10 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=33721
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
-      - AUTH_USERNAME=${AUTH_USERNAME:-admin}
-      - AUTH_PASSWORD=${AUTH_PASSWORD:-admin123}
-      - COOKIE_SECURE=${COOKIE_SECURE:-auto}
-      - COOKIE_SAME_SITE=${COOKIE_SAME_SITE:-auto}
-      - CROSS_ORIGIN_COOKIES=${CROSS_ORIGIN_COOKIES:-false}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:28081}
-      - CORS_ALLOW_ALL=${CORS_ALLOW_ALL:-false}
+      # JWT_SECRET 可选：不配置则通过 Web 初始化流程设置
+      # - JWT_SECRET=${JWT_SECRET:-}
       # ---- ADB 配置 ----
       - ADB_MODE=${ADB_MODE:-local}
-      # host 模式: 连接宿主机 ADB server
-      #   macOS/Windows Docker Desktop 用 host.docker.internal
-      #   Linux 用宿主机实际 IP
       - ADB_HOST=${ADB_HOST:-host.docker.internal}
       - ADB_PORT=${ADB_PORT:-5037}
     volumes:

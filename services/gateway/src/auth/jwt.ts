@@ -1,19 +1,22 @@
 import jwt from 'jsonwebtoken'
+import { getSecret } from './secretStore'
 
 const getJwtSecret = (): string => {
-  const secret = process.env.JWT_SECRET
+  const secret = getSecret()
   if (!secret) {
-    throw new Error('JWT_SECRET is required')
+    throw new Error('JWT secret not configured')
   }
   return secret
 }
 
 export type AuthPayload = {
   sub: string
+  iat?: number
+  exp?: number
 }
 
-export const signAccessToken = (payload: AuthPayload): string =>
-  jwt.sign(payload, getJwtSecret(), { expiresIn: '1h' })
+export const signAccessToken = (payload: { sub: string }): string =>
+  jwt.sign(payload, getJwtSecret(), { expiresIn: '30d' })
 
 export const verifyAccessToken = (token: string): AuthPayload =>
   jwt.verify(token, getJwtSecret()) as AuthPayload

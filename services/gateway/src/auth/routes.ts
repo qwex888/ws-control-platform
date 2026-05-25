@@ -1,15 +1,13 @@
 import { Router } from 'express'
-import { randomBytes, timingSafeEqual } from 'node:crypto'
-import { signAccessToken } from './jwt'
-import { getCookieOptions, loadHttpSecurityConfig } from '../config/httpSecurity'
+import { timingSafeEqual } from 'node:crypto'
+import { signAccessToken, verifyAccessToken } from './jwt'
+import { hasSecret, getSecret, saveSecret } from './secretStore'
 
-const getAuthConfig = () => {
-  const username = process.env.AUTH_USERNAME
-  const password = process.env.AUTH_PASSWORD
-  if (!username || !password) {
-    throw new Error('AUTH_USERNAME and AUTH_PASSWORD are required')
-  }
-  return { username, password }
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: false,
+  path: '/',
 }
 
 const safeEqual = (a: string, b: string): boolean => {
@@ -19,51 +17,70 @@ const safeEqual = (a: string, b: string): boolean => {
   return timingSafeEqual(aBuf, bBuf)
 }
 
+function issueSession(res: import('express').Response) {
+  const token = signAccessToken({ sub: 'admin' })
+  res.cookie('access_token', token, COOKIE_OPTIONS)
+}
+
 export const authRouter = Router()
 
+authRouter.get('/status', (req, res) => {
+  const initialized = hasSecret()
+  let authenticated = false
+
+  const token = req.cookies?.access_token
+  if (token) {
+    try {
+      verifyAccessToken(token)
+      authenticated = true
+    } catch {
+      authenticated = false
+    }
+  }
+
+  res.json({ success: true, data: { initialized, authenticated }, error: null })
+})
+
+authRouter.post('/setup', (req, res) => {
+  if (hasSecret()) {
+    res.status(403).json({ success: false, data: null, error: 'ALREADY_INITIALIZED' })
+    return
+  }
+
+  const { secret } = req.body as { secret?: string }
+  if (!secret || secret.length < 4) {
+    res.status(400).json({ success: false, data: null, error: 'SECRET_TOO_SHORT' })
+    return
+  }
+
+  saveSecret(secret)
+  issueSession(res)
+  res.json({ success: true, data: { message: 'initialized' }, error: null })
+})
+
 authRouter.post('/login', (req, res) => {
-  const { username, password } = req.body as { username?: string; password?: string }
-  if (!username || !password) {
+  const { secret } = req.body as { secret?: string }
+  if (!secret) {
     res.status(400).json({ success: false, data: null, error: 'INVALID_PAYLOAD' })
     return
   }
 
-  const auth = getAuthConfig()
-  const valid = safeEqual(username, auth.username) && safeEqual(password, auth.password)
-  if (!valid) {
-    res.status(401).json({ success: false, data: null, error: 'INVALID_CREDENTIALS' })
+  const stored = getSecret()
+  if (!stored) {
+    res.status(400).json({ success: false, data: null, error: 'NOT_INITIALIZED' })
     return
   }
 
-  const token = signAccessToken({ sub: username })
-  const csrfToken = randomBytes(24).toString('hex')
-  const cookieOptions = getCookieOptions(loadHttpSecurityConfig())
+  if (!safeEqual(secret, stored)) {
+    res.status(401).json({ success: false, data: null, error: 'INVALID_SECRET' })
+    return
+  }
 
-  res.cookie('access_token', token, {
-    httpOnly: true,
-    sameSite: cookieOptions.sameSite,
-    secure: cookieOptions.secure,
-    path: '/',
-  })
-  res.cookie('csrf_token', csrfToken, {
-    httpOnly: false,
-    sameSite: cookieOptions.sameSite,
-    secure: cookieOptions.secure,
-    path: '/',
-  })
-
-  res.json({ success: true, data: { username, csrfToken }, error: null })
+  issueSession(res)
+  res.json({ success: true, data: { message: 'authenticated' }, error: null })
 })
 
 authRouter.post('/logout', (_req, res) => {
-  const cookieOptions = getCookieOptions(loadHttpSecurityConfig())
-  const clearOptions = {
-    path: '/',
-    secure: cookieOptions.secure,
-    sameSite: cookieOptions.sameSite,
-  }
-
-  res.clearCookie('access_token', clearOptions)
-  res.clearCookie('csrf_token', clearOptions)
+  res.clearCookie('access_token', { path: '/' })
   res.json({ success: true, data: null, error: null })
 })

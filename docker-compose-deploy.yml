@@ -21,12 +21,8 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=33721
-      - JWT_SECRET=change-me-in-production
-      - AUTH_USERNAME=admin
-      - AUTH_PASSWORD=admin123
-      - COOKIE_SECURE=auto
-      - COOKIE_SAME_SITE=auto
-      - ALLOWED_ORIGINS=*
+      # JWT_SECRET 可选：不配置则通过 Web 初始化流程设置
+      # - JWT_SECRET=${JWT_SECRET:-}
       # ---- ADB 配置 ----
       - ADB_MODE=local
       # host 模式: 连接宿主机 ADB server

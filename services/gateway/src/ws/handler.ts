@@ -48,7 +48,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const BUNDLED_SCRCPY_SERVER = path.resolve(__dirname, '../../vendor/scrcpy-server.jar')
 const SCRCPY_SERVER_PATH = process.env.SCRCPY_SERVER_PATH || BUNDLED_SCRCPY_SERVER
 
-export function attachWebSocket(httpServer: HttpServer, deviceConfigRepo?: DeviceConfigRepo) {
+export type WsContext = {
+  wss: InstanceType<typeof WebSocketServer>
+  sessions: Map<string, ClientSession>
+  refreshDeviceList: () => void
+}
+
+export function attachWebSocket(httpServer: HttpServer, deviceConfigRepo?: DeviceConfigRepo): WsContext {
   const bridge = createBridge(RESUME_TTL_MS)
   const sessions = new Map<string, ClientSession>()
 
@@ -146,10 +152,16 @@ export function attachWebSocket(httpServer: HttpServer, deviceConfigRepo?: Devic
     })
   })
 
-  return { wss, sessions }
+  const refreshDeviceList = () => broadcastDeviceList(sessions, tracker)
+
+  return { wss, sessions, refreshDeviceList }
 }
 
 function authenticateFromCookie(req: IncomingMessage): string | null {
+  if (process.env.NODE_ENV !== 'production') {
+    return 'dev'
+  }
+
   const cookieHeader = req.headers.cookie
   if (!cookieHeader) return null
 
@@ -420,10 +432,12 @@ async function buildDeviceList(tracker: DeviceTracker) {
 
   try {
     devices = await listDevices()
-  } catch {
+  } catch (err) {
+    console.warn('[ws] listDevices() failed, falling back to tracker:', err)
     devices = tracker.getDevices()
   }
 
+  console.log(`[ws] buildDeviceList: ${devices.length} device(s)`, devices.map((d) => `${d.id}(${d.type})`))
   return devices.map((d) => ({
     id: d.id,
     type: d.type,

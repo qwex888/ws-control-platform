@@ -6,30 +6,25 @@ const loginAndGetAuth = async () => {
   const { app } = createServer()
   const login = await request(app)
     .post('/auth/login')
-    .send({ username: 'admin', password: 'admin123' })
+    .send({ secret: 'test-secret' })
 
   const cookieHeader = login.headers['set-cookie']
   const cookies = Array.isArray(cookieHeader) ? cookieHeader : cookieHeader ? [String(cookieHeader)] : []
-  const csrfCookie = cookies.find((item) => item.startsWith('csrf_token=')) ?? ''
-  const csrfToken = csrfCookie.split(';')[0].split('=')[1]
 
-  return { app, cookie: cookies, csrfToken }
+  return { app, cookie: cookies }
 }
 
 describe('device config api', () => {
   beforeEach(() => {
-    process.env.JWT_SECRET = 'test-jwt-secret'
-    process.env.AUTH_USERNAME = 'admin'
-    process.env.AUTH_PASSWORD = 'admin123'
-    process.env.COOKIE_SECURE = 'false'
+    process.env.JWT_SECRET = 'test-secret'
+    process.env.NODE_ENV = 'production'
   })
 
   it('creates config on first connect', async () => {
-    const { app, cookie, csrfToken } = await loginAndGetAuth()
+    const { app, cookie } = await loginAndGetAuth()
     const connect = await request(app)
       .post('/api/device/connect')
       .set('Cookie', cookie)
-      .set('x-csrf-token', csrfToken)
       .send({
         serial: 'SER001',
         transportId: '2',
@@ -48,12 +43,11 @@ describe('device config api', () => {
   })
 
   it('uses updated config on next connect', async () => {
-    const { app, cookie, csrfToken } = await loginAndGetAuth()
+    const { app, cookie } = await loginAndGetAuth()
 
     await request(app)
       .post('/api/device/connect')
       .set('Cookie', cookie)
-      .set('x-csrf-token', csrfToken)
       .send({
         serial: 'SER002',
         transportId: '3',
@@ -63,7 +57,6 @@ describe('device config api', () => {
     const update = await request(app)
       .put('/api/device/config')
       .set('Cookie', cookie)
-      .set('x-csrf-token', csrfToken)
       .send({
         serial: 'SER002',
         transportId: '3',
@@ -75,7 +68,6 @@ describe('device config api', () => {
     const reconnect = await request(app)
       .post('/api/device/connect')
       .set('Cookie', cookie)
-      .set('x-csrf-token', csrfToken)
       .send({ serial: 'SER002', transportId: '3' })
 
     expect(reconnect.status).toBe(200)

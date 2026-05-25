@@ -2,30 +2,78 @@ import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Toaster } from 'sonner'
 import { AppShell } from './AppShell'
-import { fetchMe } from '../features/auth/authClient'
+import { fetchAuthStatus } from '../features/auth/authClient'
 import { LoginPage } from '../features/auth/LoginPage'
+import { SetupPage } from '../features/auth/SetupPage'
 import { useConnectionStore } from '../store/connectionStore'
 
+type Phase = 'checking' | 'needSetup' | 'needLogin' | 'authed'
+
 export function AppRoutes() {
-  const [checking, setChecking] = useState(true)
-  const [authed, setAuthed] = useState(false)
+  const [phase, setPhase] = useState<Phase>('checking')
   const setUsername = useConnectionStore((s) => s.setUsername)
 
   useEffect(() => {
-    if (import.meta.env.VITE_DEV_BYPASS_AUTH === 'true') {
-      setAuthed(true)
+    if (import.meta.env.DEV) {
+      setPhase('authed')
       setUsername('dev')
-      setChecking(false)
       return
     }
 
     void (async () => {
-      const user = await fetchMe()
-      setAuthed(Boolean(user))
-      if (user) setUsername(user.username)
-      setChecking(false)
+      try {
+        const status = await fetchAuthStatus()
+        if (status.authenticated) {
+          setPhase('authed')
+          setUsername('admin')
+        } else if (!status.initialized) {
+          setPhase('needSetup')
+        } else {
+          setPhase('needLogin')
+        }
+      } catch {
+        setPhase('needLogin')
+      }
     })()
   }, [setUsername])
+
+  const renderContent = () => {
+    switch (phase) {
+      case 'checking':
+        return (
+          <main className="flex h-full items-center justify-center bg-background">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </main>
+        )
+      case 'needSetup':
+        return (
+          <SetupPage
+            onSuccess={() => {
+              setPhase('authed')
+              setUsername('admin')
+            }}
+          />
+        )
+      case 'needLogin':
+        return (
+          <LoginPage
+            onSuccess={() => {
+              setPhase('authed')
+              setUsername('admin')
+            }}
+          />
+        )
+      case 'authed':
+        return (
+          <AppShell
+            onSessionInvalid={() => {
+              setPhase('needLogin')
+              setUsername(null)
+            }}
+          />
+        )
+    }
+  }
 
   return (
     <>
@@ -36,20 +84,7 @@ export function AppRoutes() {
         }}
         theme="dark"
       />
-      {checking ? (
-        <main className="flex h-full items-center justify-center bg-background">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </main>
-      ) : authed ? (
-        <AppShell
-          onSessionInvalid={() => {
-            setAuthed(false)
-            setUsername(null)
-          }}
-        />
-      ) : (
-        <LoginPage onSuccess={() => setAuthed(true)} />
-      )}
+      {renderContent()}
     </>
   )
 }

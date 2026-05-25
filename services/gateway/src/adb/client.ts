@@ -18,7 +18,10 @@ export type AdbDevice = {
 
 export async function listDevices(): Promise<AdbDevice[]> {
   const client = getAdbClient()
-  const devices = await client.listDevices()
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('listDevices timeout (5s)')), 5000)
+  )
+  const devices = await Promise.race([client.listDevices(), timeoutPromise])
   return devices.map((d: { id: string; type: string }) => ({
     id: d.id,
     type: d.type,
