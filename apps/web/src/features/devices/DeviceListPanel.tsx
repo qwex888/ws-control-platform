@@ -51,10 +51,26 @@ function DeviceCard({ device, selected, onSelect, onSettings }: {
           <span className="truncate text-sm font-medium">{device.name}</span>
           <div className="flex items-center gap-1">
             <Badge
-              variant={device.status === 'online' ? 'success' : device.status === 'connecting' ? 'warning' : 'secondary'}
+              variant={
+                device.status === 'online'
+                  ? 'success'
+                  : device.status === 'connecting' || device.status === 'recovering'
+                    ? 'warning'
+                    : device.status === 'unauthorized'
+                      ? 'warning'
+                      : 'secondary'
+              }
               className="shrink-0 text-[10px]"
             >
-              {device.status === 'online' ? '在线' : device.status === 'connecting' ? '连接中' : '离线'}
+              {device.status === 'online'
+                ? '在线'
+                : device.status === 'connecting'
+                  ? '连接中'
+                  : device.status === 'recovering'
+                    ? '恢复中'
+                    : device.status === 'unauthorized'
+                      ? '待授权'
+                      : '离线'}
             </Badge>
             <div
               role="button"
@@ -79,14 +95,14 @@ function DeviceCard({ device, selected, onSelect, onSettings }: {
 type Props = {
   onDeviceSelect: (serial: string, config?: DeviceConfig) => void
   onRefresh: () => void
+  refreshing?: boolean
 }
 
-export function DeviceListPanel({ onDeviceSelect, onRefresh }: Props) {
+export function DeviceListPanel({ onDeviceSelect, onRefresh, refreshing = false }: Props) {
   const devices = useDeviceStore((s) => s.devices)
   const selectedDeviceKey = useDeviceStore((s) => s.selectedDeviceKey)
   const selectDevice = useDeviceStore((s) => s.selectDevice)
   const isMobile = useLayoutStore((s) => s.isMobile)
-  const [refreshing, setRefreshing] = useState(false)
   const [configOpen, setConfigOpen] = useState(false)
   const [configTarget, setConfigTarget] = useState<DeviceInfo | null>(null)
   const [currentConfig, setCurrentConfig] = useState<DeviceConfig>({ ...DEFAULT_DEVICE_CONFIG })
@@ -95,9 +111,7 @@ export function DeviceListPanel({ onDeviceSelect, onRefresh }: Props) {
   const [addDeviceOpen, setAddDeviceOpen] = useState(false)
 
   const handleRefresh = () => {
-    setRefreshing(true)
     onRefresh()
-    setTimeout(() => setRefreshing(false), 1000)
   }
 
   const openConfig = useCallback(async (device: DeviceInfo) => {
@@ -107,11 +121,21 @@ export function DeviceListPanel({ onDeviceSelect, onRefresh }: Props) {
     setConfigOpen(true)
   }, [fetchConfig])
 
-  const handleSelect = useCallback(async (device: DeviceInfo) => {
-    const key = makeDeviceKey(device)
-    selectDevice(key)
-    openConfig(device)
-  }, [selectDevice, openConfig])
+  const handleSelect = useCallback(
+    async (device: DeviceInfo) => {
+      const key = makeDeviceKey(device)
+      selectDevice(key)
+
+      if (device.status === 'unauthorized') {
+        const config = await fetchConfig(device.serial)
+        onDeviceSelect(device.serial, config)
+        return
+      }
+
+      openConfig(device)
+    },
+    [selectDevice, openConfig, fetchConfig, onDeviceSelect],
+  )
 
   const handleSettingsClick = useCallback((e: React.MouseEvent, device: DeviceInfo) => {
     e.stopPropagation()

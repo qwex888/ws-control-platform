@@ -75,6 +75,31 @@ pnpm -r test
 pnpm --dir apps/web test:e2e
 ```
 
+
+## 5) docker部署
+
+一键命令:
+
+```bash
+# 构建 + 本地部署（默认，不推送远程）
+./scripts/docker-deploy.sh all
+
+# 或仅本地部署（跳过推送）
+SKIP_PUSH=1 ./scripts/docker-deploy.sh all
+```
+
+完整发布到镜像仓库
+
+```bash
+# 先登录仓库
+docker login ghcr.io   # 或 docker.io
+
+# 构建 + 部署 + 推送
+DOCKER_REGISTRY=ghcr.io/你的用户名 \
+DOCKER_TAG=v1.0.0 \
+./scripts/docker-deploy.sh all
+```
+
 ## NAS + FRP 生产配置建议
 
 网关进程至少应配置：
@@ -84,7 +109,7 @@ JWT_SECRET=<高强度随机密钥>
 AUTH_USERNAME=<登录用户名>
 AUTH_PASSWORD=<登录密码>
 COOKIE_SECURE=true
-PORT=13701
+PORT=33721
 NODE_ENV=production
 ```
 

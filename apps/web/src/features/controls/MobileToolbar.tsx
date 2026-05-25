@@ -26,7 +26,13 @@ export function MobileToolbar({ deviceName, status, onBack, send }: Props) {
         <div className="flex items-center gap-2">
           <span className="max-w-[160px] truncate text-sm font-medium">{deviceName}</span>
           <Badge
-            variant={status === 'online' ? 'success' : status === 'connecting' ? 'warning' : 'secondary'}
+            variant={
+              status === 'online'
+                ? 'success'
+                : status === 'connecting' || status === 'recovering' || status === 'unauthorized'
+                  ? 'warning'
+                  : 'secondary'
+            }
             className="text-[10px] gap-1"
           >
             {status === 'online' ? (
@@ -34,7 +40,15 @@ export function MobileToolbar({ deviceName, status, onBack, send }: Props) {
             ) : (
               <WifiOff className="h-2.5 w-2.5" />
             )}
-            {status === 'online' ? '已连接' : status === 'connecting' ? '连接中' : '离线'}
+            {status === 'online'
+              ? '已连接'
+              : status === 'connecting'
+                ? '连接中'
+                : status === 'recovering'
+                  ? '恢复中'
+                  : status === 'unauthorized'
+                    ? '待授权'
+                    : '离线'}
           </Badge>
         </div>
 

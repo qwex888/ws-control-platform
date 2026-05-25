@@ -19,7 +19,10 @@
       "fps": 24,
       "bitrate": 8000000,
       "maxSize": 1080,
-      "orientationLock": "free"
+      "orientationLock": "free",
+      "captureMode": "mirror",
+      "virtualDisplay": "",
+      "secureCaptureMode": "default"
     }
   },
   "qwex888::192.168.31.254:5555::192.168.31.254:5555": {

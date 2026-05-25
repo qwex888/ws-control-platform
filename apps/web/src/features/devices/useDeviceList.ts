@@ -1,46 +1,134 @@
-import { useCallback } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type { WsMessage } from '@wsctl/core'
-import { useDeviceStore, type DeviceInfo } from '../../store/deviceStore'
+import type { DeviceConnectStatus, WsMessage } from '@wsctl/core'
+import { useDeviceStore, mapAdbTypeToStatus, type DeviceInfo, type DeviceStatus } from '../../store/deviceStore'
+
+const REFRESH_TIMEOUT_MS = 5000
+
+const PROGRESS_TOAST: Partial<Record<DeviceConnectStatus, { message: string; description?: string }>> = {
+  checking: { message: '正在检测设备状态…' },
+  waiting_auth: {
+    message: '等待设备授权',
+    description: '请在设备屏幕上点击「允许 USB 调试」',
+  },
+  recovering: {
+    message: '正在尝试恢复连接…',
+    description: '请稍候，或检查 USB / 无线连接',
+  },
+  cleaning: { message: '正在清理环境…' },
+  pushing: { message: '正在推送投屏服务…' },
+  starting: { message: '正在启动投屏服务…' },
+  connecting: { message: '正在建立视频连接…' },
+}
+
+const IN_PROGRESS_STATUSES: DeviceConnectStatus[] = [
+  'checking',
+  'waiting_auth',
+  'recovering',
+  'cleaning',
+  'pushing',
+  'starting',
+  'connecting',
+]
+
+function connectStatusToDeviceStatus(status: DeviceConnectStatus): DeviceStatus {
+  if (status === 'waiting_auth') return 'unauthorized'
+  if (status === 'recovering') return 'recovering'
+  if (IN_PROGRESS_STATUSES.includes(status)) return 'connecting'
+  if (status === 'connected') return 'online'
+  if (status === 'failed') return 'offline'
+  return 'connecting'
+}
 
 export function useDeviceList() {
   const setDevices = useDeviceStore((s) => s.setDevices)
   const updateDeviceStatus = useDeviceStore((s) => s.updateDeviceStatus)
+  const setStreamLost = useDeviceStore((s) => s.setStreamLost)
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearRefreshTimer = useCallback(() => {
+    if (refreshTimer.current) {
+      clearTimeout(refreshTimer.current)
+      refreshTimer.current = null
+    }
+  }, [])
 
   const handleWsMessage = useCallback(
     (msg: WsMessage) => {
       if (msg.event === 'device/list') {
         const data = msg.data as { devices: Array<{ id: string; type: string; name?: string }> }
-        const devices: DeviceInfo[] = data.devices.map((d) => ({
-          serial: d.id,
-          transportId: d.id,
-          name: d.name ?? d.id,
-          status: d.type === 'device' ? 'online' : 'offline',
-        }))
+        const prev = useDeviceStore.getState().devices
+        const devices: DeviceInfo[] = data.devices.map((d) => {
+          const existing = prev.find((p) => p.serial === d.id)
+          return {
+            serial: d.id,
+            transportId: d.id,
+            name: d.name ?? d.id,
+            adbType: d.type,
+            status: mapAdbTypeToStatus(d.type, existing?.status),
+          }
+        })
         setDevices(devices)
 
-        if (devices.length === 0) {
-          toast.info('未发现 ADB 设备', {
-            description: '请确认设备已通过 USB 连接并启用了调试模式',
-          })
+        if (refreshTimer.current) {
+          clearRefreshTimer()
+          setRefreshing(false)
+          if (devices.length > 0) {
+            toast.success(`刷新成功，发现 ${devices.length} 台设备`)
+          } else {
+            toast.info('未发现 ADB 设备', {
+              description: '请确认设备已通过 USB 连接并启用了调试模式',
+            })
+          }
         }
       }
 
       if (msg.event === 'device/connect') {
-        const data = msg.data as { status: string; serial: string; reason?: string }
-        if (data.status === 'connecting') {
-          updateDeviceStatus(data.serial, 'connecting')
-          toast.loading(`正在连接 ${data.serial} ...`, { id: `connect-${data.serial}` })
-        } else if (data.status === 'connected') {
-          updateDeviceStatus(data.serial, 'online')
-          toast.success(`已连接 ${data.serial}`, { id: `connect-${data.serial}` })
-        } else if (data.status === 'failed') {
-          updateDeviceStatus(data.serial, 'offline')
-          toast.error(`连接失败: ${data.serial}`, {
-            id: `connect-${data.serial}`,
-            description: data.reason ?? '请检查设备状态',
+        const data = msg.data as {
+          status: DeviceConnectStatus
+          serial: string
+          reason?: string
+          suggestion?: string
+        }
+        const { status, serial, reason, suggestion } = data
+        const toastId = `connect-${serial}`
+
+        if (status === 'connected') {
+          updateDeviceStatus(serial, 'online')
+          setStreamLost(false)
+          toast.success(`已连接 ${serial}`, { id: toastId })
+          return
+        }
+
+        if (status === 'failed') {
+          updateDeviceStatus(serial, 'offline')
+          toast.error(`连接失败: ${serial}`, {
+            id: toastId,
+            description: suggestion ?? reason ?? '请检查设备状态',
+          })
+          return
+        }
+
+        updateDeviceStatus(serial, connectStatusToDeviceStatus(status))
+
+        const progress = PROGRESS_TOAST[status]
+        if (progress) {
+          toast.loading(progress.message, {
+            id: toastId,
+            description: progress.description ?? suggestion,
           })
         }
+      }
+
+      if (msg.event === 'device/stream-lost') {
+        const data = msg.data as { serial: string; stream: string }
+        setStreamLost(true)
+        updateDeviceStatus(data.serial, 'offline')
+        toast.error('设备连接已中断', {
+          id: `stream-lost-${data.serial}`,
+          description: '可点击画面上的「重新连接」恢复投屏',
+        })
       }
 
       if (msg.event === 'error') {
@@ -54,7 +142,7 @@ export function useDeviceList() {
         })
       }
     },
-    [setDevices, updateDeviceStatus]
+    [setDevices, updateDeviceStatus, clearRefreshTimer, setStreamLost]
   )
 
   const requestDeviceList = useCallback(
@@ -64,5 +152,20 @@ export function useDeviceList() {
     []
   )
 
-  return { handleWsMessage, requestDeviceList, updateDeviceStatus }
+  const refreshDeviceList = useCallback(
+    (send: (msg: WsMessage) => void) => {
+      clearRefreshTimer()
+      setRefreshing(true)
+      send({ event: 'device/list' })
+
+      refreshTimer.current = setTimeout(() => {
+        refreshTimer.current = null
+        setRefreshing(false)
+        toast.error('刷新设备列表超时', { description: '请检查后端服务是否正常运行' })
+      }, REFRESH_TIMEOUT_MS)
+    },
+    [clearRefreshTimer]
+  )
+
+  return { handleWsMessage, requestDeviceList, refreshDeviceList, refreshing, updateDeviceStatus }
 }

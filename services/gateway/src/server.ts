@@ -10,19 +10,19 @@ import { requireCsrf } from './middleware/csrf'
 import { createDeviceRouter } from './device/routes'
 import { DeviceConfigRepo } from './device/repo'
 import { attachWebSocket } from './ws/handler'
+import {
+  createCorsOriginChecker,
+  loadHttpSecurityConfig,
+  logHttpSecurityConfig,
+} from './config/httpSecurity'
 
 export const createServer = () => {
   const app = express()
+  const httpSecurity = loadHttpSecurityConfig()
+  logHttpSecurityConfig(httpSecurity)
 
-  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') ?? ['http://localhost:5173']
   app.use(cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true)
-      } else {
-        callback(new Error('Not allowed by CORS'))
-      }
-    },
+    origin: createCorsOriginChecker(httpSecurity),
     credentials: true,
   }))
 
@@ -65,7 +65,10 @@ if (process.env.NODE_ENV !== 'test') {
   const { httpServer, deviceConfigRepo } = createServer()
   deviceConfigRepo.load().then(() => {
     const port = Number(process.env.PORT ?? 13701)
-    httpServer.listen(port)
+    httpServer.listen(port, () => {
+      console.log(`[server] gateway listening on http://0.0.0.0:${port}`)
+      console.log(`[server] NODE_ENV=${process.env.NODE_ENV ?? 'undefined'}`)
+    })
   }).catch((err) => {
     console.error('[server] failed to load device configs:', err)
     process.exit(1)

@@ -19,7 +19,11 @@ export class VideoRelay {
   private bytesReceived = 0
   private packetsSent = 0
 
-  attach(videoStream: Duplex, ws: WebSocket) {
+  attach(
+    videoStream: Duplex,
+    ws: WebSocket,
+    options?: { onStreamLost?: () => void },
+  ) {
     this.detach()
     this.videoStream = videoStream
     this.ws = ws
@@ -70,13 +74,19 @@ export class VideoRelay {
       }
     })
 
+    const notifyLost = () => {
+      if (!this.active) return
+      this.active = false
+      options?.onStreamLost?.()
+    }
+
     videoStream.on('end', () => {
       console.log(`[video-relay] video stream ended (${this.bytesReceived}B received, ${this.packetsSent} packets sent)`)
-      this.active = false
+      notifyLost()
     })
     videoStream.on('error', (err) => {
       console.error(`[video-relay] video stream error:`, err)
-      this.active = false
+      notifyLost()
     })
   }
 

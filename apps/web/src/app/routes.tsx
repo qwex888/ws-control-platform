@@ -41,7 +41,12 @@ export function AppRoutes() {
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </main>
       ) : authed ? (
-        <AppShell />
+        <AppShell
+          onSessionInvalid={() => {
+            setAuthed(false)
+            setUsername(null)
+          }}
+        />
       ) : (
         <LoginPage onSuccess={() => setAuthed(true)} />
       )}

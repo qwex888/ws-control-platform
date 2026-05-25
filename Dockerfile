@@ -13,7 +13,7 @@ RUN corepack enable && corepack prepare pnpm@10.0.0 --activate
 WORKDIR /app
 
 # Copy workspace root manifests first for layer caching
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
 
 # Copy package.json for each workspace package
 COPY packages/core/package.json packages/core/
@@ -46,9 +46,8 @@ RUN apt-get update && \
       tini \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Install tsx globally ---
-RUN corepack enable && corepack prepare pnpm@10.0.0 --activate && \
-    pnpm add -g tsx
+# --- Install tsx globally (use npm to avoid pnpm global-bin-dir issue) ---
+RUN npm install -g tsx
 
 WORKDIR /app
 
@@ -74,10 +73,10 @@ COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Persistent data volume
-VOLUME ["/app/data"]
+# Persistent volumes: app data + ADB keys
+VOLUME ["/app/data", "/root/.android"]
 
-EXPOSE 80
+EXPOSE 28081
 
 ENV NODE_ENV=production
 ENV PORT=33721

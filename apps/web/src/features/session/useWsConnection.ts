@@ -7,6 +7,7 @@ import { useConnectionStore } from '../../store/connectionStore'
 type UseWsConnectionOptions = {
   onMessage?: (msg: WsMessage) => void
   onBinary?: (data: ArrayBuffer) => void
+  onAuthFailure?: () => void
 }
 
 export function useWsConnection(options: UseWsConnectionOptions = {}) {
@@ -18,6 +19,9 @@ export function useWsConnection(options: UseWsConnectionOptions = {}) {
 
   const onBinaryRef = useRef(options.onBinary)
   onBinaryRef.current = options.onBinary
+
+  const onAuthFailureRef = useRef(options.onAuthFailure)
+  onAuthFailureRef.current = options.onAuthFailure
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -50,6 +54,9 @@ export function useWsConnection(options: UseWsConnectionOptions = {}) {
             })
           }
         }
+      },
+      onAuthFailure: () => {
+        onAuthFailureRef.current?.()
       },
     })
 

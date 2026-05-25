@@ -6,6 +6,7 @@ export const WS_EVENTS = {
   DEVICE_CONNECT: 'device/connect',
   DEVICE_DISCONNECT: 'device/disconnect',
   DEVICE_LIST: 'device/list',
+  DEVICE_STREAM_LOST: 'device/stream-lost',
   DEVICE_CONFIG_UPDATE: 'device/config/update',
   INPUT_KEYBOARD: 'input/keyboard',
   INPUT_KEY_HID: 'input/key-hid',

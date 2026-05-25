@@ -8,7 +8,20 @@ import { verifyAccessToken } from '../auth/jwt'
 import { createBridge } from './bridge'
 import { listDevices, getDeviceProperties } from '../adb/client'
 import { DeviceTracker, type DeviceEvent } from '../adb/tracker'
-import { pushScrcpyServer, startScrcpyServer, type ScrcpyConnection } from '../adb/scrcpy'
+import {
+  pushScrcpyServer,
+  cleanupStaleScrcpy,
+  startScrcpyServerWithRetry,
+  type ScrcpyConnection,
+  type ScrcpyOptions,
+} from '../adb/scrcpy'
+import {
+  checkDeviceReady,
+  waitForAuthorization,
+  recoverOfflineDevice,
+  getSuggestion,
+  type DeviceNotReadyReason,
+} from '../adb/healthCheck'
 import { VideoRelay } from '../stream/videoRelay'
 import { ControlRelay, type TouchEvent, type ScrollEvent, type ControlAction } from '../stream/controlRelay'
 import { UhidKeyboard, DOM_CODE_TO_HID } from '../stream/uhidKeyboard'
@@ -199,53 +212,114 @@ async function handleMessage(
         cleanupScrcpy(session)
       }
 
-      sendJson(ws, {
-        event: 'device/connect',
-        data: { status: 'connecting', serial },
-        requestId: msg.requestId,
-      })
+      const requestId = msg.requestId
+      const sendConnect = (status: string, extra?: Record<string, unknown>) => {
+        sendJson(ws, {
+          event: 'device/connect',
+          data: { status, serial, ...extra },
+          requestId,
+        })
+      }
+
+      const failConnect = (reason: string, suggestion?: string) => {
+        cleanupScrcpy(session)
+        session.connectedDevice = null
+        sendConnect('failed', { reason, suggestion })
+      }
 
       try {
-        console.log(`[ws] pushing scrcpy-server to ${serial} ...`)
-        await pushScrcpyServer(serial, SCRCPY_SERVER_PATH)
-        console.log(`[ws] scrcpy-server pushed, starting server ...`)
+        sendConnect('checking')
+
+        let readiness = await checkDeviceReady(serial)
+
+        while (!readiness.ready) {
+          if (readiness.reason === 'unauthorized') {
+            sendConnect('waiting_auth', {
+              suggestion: getSuggestion('unauthorized'),
+            })
+            const authorized = await waitForAuthorization(serial, 30_000)
+            if (!authorized) {
+              failConnect('设备未授权', getSuggestion('unauthorized'))
+              break
+            }
+            readiness = await checkDeviceReady(serial)
+            continue
+          }
+
+          if (readiness.reason === 'offline') {
+            sendConnect('recovering', {
+              suggestion: getSuggestion('offline'),
+            })
+            const recovered = await recoverOfflineDevice(serial)
+            if (!recovered) {
+              failConnect('设备离线', getSuggestion('offline'))
+              break
+            }
+            readiness = await checkDeviceReady(serial)
+            continue
+          }
+
+          const reason = readiness.reason
+          failConnect(
+            humanizeNotReadyReason(reason),
+            getSuggestion(reason),
+          )
+          break
+        }
+
+        if (!readiness.ready) break
+
+        sendConnect('cleaning')
+        await cleanupStaleScrcpy(serial)
 
         const savedConfig = deviceConfigRepo?.getBySerial(session.userId, serial)?.config
         const msgConfig = msg.data?.config as Record<string, unknown> | undefined
 
-        const maxSize = (msgConfig?.maxSize as number) ?? savedConfig?.maxSize ?? DEFAULT_DEVICE_CONFIG.maxSize
-        const bitrate = (msgConfig?.bitrate as number) ?? savedConfig?.bitrate ?? DEFAULT_DEVICE_CONFIG.bitrate
-        const maxFps = (msgConfig?.fps as number) ?? savedConfig?.fps ?? DEFAULT_DEVICE_CONFIG.fps
-        const captureMode = (msgConfig?.captureMode as 'mirror' | 'virtual_display') ?? savedConfig?.captureMode ?? DEFAULT_DEVICE_CONFIG.captureMode
-        const virtualDisplay = (msgConfig?.virtualDisplay as string) ?? savedConfig?.virtualDisplay ?? DEFAULT_DEVICE_CONFIG.virtualDisplay
-        const secureCaptureMode = (msgConfig?.secureCaptureMode as string) ?? savedConfig?.secureCaptureMode ?? DEFAULT_DEVICE_CONFIG.secureCaptureMode
-        const rootServer = secureCaptureMode === 'root_server'
+        const scrcpyOptions: ScrcpyOptions = {
+          maxSize: (msgConfig?.maxSize as number) ?? savedConfig?.maxSize ?? DEFAULT_DEVICE_CONFIG.maxSize,
+          bitrate: (msgConfig?.bitrate as number) ?? savedConfig?.bitrate ?? DEFAULT_DEVICE_CONFIG.bitrate,
+          maxFps: (msgConfig?.fps as number) ?? savedConfig?.fps ?? DEFAULT_DEVICE_CONFIG.fps,
+          captureMode: (msgConfig?.captureMode as 'mirror' | 'virtual_display') ?? savedConfig?.captureMode ?? DEFAULT_DEVICE_CONFIG.captureMode,
+          virtualDisplay: (msgConfig?.virtualDisplay as string) ?? savedConfig?.virtualDisplay ?? DEFAULT_DEVICE_CONFIG.virtualDisplay,
+          rootServer:
+            ((msgConfig?.secureCaptureMode as string) ?? savedConfig?.secureCaptureMode ?? DEFAULT_DEVICE_CONFIG.secureCaptureMode) === 'root_server',
+        }
 
-        const conn = await startScrcpyServer(serial, { maxSize, bitrate, maxFps, captureMode, virtualDisplay, rootServer })
+        sendConnect('pushing')
+        console.log(`[ws] pushing scrcpy-server to ${serial} ...`)
+        await pushScrcpyServer(serial, SCRCPY_SERVER_PATH)
+
+        sendConnect('starting')
+        sendConnect('connecting')
+
+        const conn = await startScrcpyServerWithRetry(serial, scrcpyOptions)
         session.scrcpy = conn
         session.connectedDevice = serial
 
-        session.videoRelay.attach(conn.videoStream, ws)
+        const notifyStreamLost = (stream: 'video' | 'control') => {
+          if (session.connectedDevice !== serial) return
+          sendJson(ws, {
+            event: 'device/stream-lost',
+            data: { serial, stream },
+          })
+        }
+
+        session.videoRelay.attach(conn.videoStream, ws, {
+          onStreamLost: () => notifyStreamLost('video'),
+        })
         session.controlRelay.attach(conn.controlStream)
 
+        conn.controlStream.once('close', () => notifyStreamLost('control'))
+        conn.controlStream.once('error', () => notifyStreamLost('control'))
+
         session.controlRelay.turnScreenOn()
-
         session.uhidKeyboard.attach(session.controlRelay)
-        console.log(`[ws] UHID virtual keyboard created for ${serial}`)
-
         console.log(`[ws] scrcpy connected to ${serial}`)
-        sendJson(ws, {
-          event: 'device/connect',
-          data: { status: 'connected', serial },
-          requestId: msg.requestId,
-        })
+
+        sendConnect('connected')
       } catch (err) {
-        console.error('[ws] scrcpy start failed:', err)
-        sendJson(ws, {
-          event: 'device/connect',
-          data: { status: 'failed', serial, reason: String(err) },
-          requestId: msg.requestId,
-        })
+        console.error('[ws] scrcpy connect pipeline failed:', err)
+        failConnect(String(err), parseConnectErrorSuggestion(err))
       }
       break
     }
@@ -429,4 +503,33 @@ function sendJson(ws: WebSocket, data: Record<string, unknown>) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(data))
   }
+}
+
+function humanizeNotReadyReason(reason: DeviceNotReadyReason): string {
+  switch (reason) {
+    case 'unauthorized':
+      return '设备未授权'
+    case 'offline':
+      return '设备离线'
+    case 'no_permissions':
+      return '无设备访问权限'
+    case 'not_found':
+      return '未找到设备'
+    default:
+      return '设备不可用'
+  }
+}
+
+function parseConnectErrorSuggestion(err: unknown): string | undefined {
+  const msg = String(err)
+  if (msg.includes('ECONNREFUSED') || msg.includes('socket: failed')) {
+    return '连接投屏服务失败，请稍后重试；若仍失败请重新插拔设备'
+  }
+  if (msg.toLowerCase().includes('offline')) {
+    return getSuggestion('offline')
+  }
+  if (msg.includes('unauthorized')) {
+    return getSuggestion('unauthorized')
+  }
+  return undefined
 }

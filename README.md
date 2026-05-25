@@ -75,6 +75,30 @@ pnpm -r test
 pnpm --dir apps/web test:e2e
 ```
 
+## 5) docker deploy
+
+One-click command:
+
+```bash
+# Build + local deployment (default, no push remote)
+./scripts/docker-deploy.sh all
+
+# Or only deploy locally (skip push notifications)
+SKIP_PUSH=1 ./scripts/docker-deploy.sh all
+```
+
+Completely released to the mirror warehouse
+
+```bash
+# Log in to the warehouse first
+docker login ghcr.io   # or docker.io
+
+# Build + deploy + push
+DOCKER_REGISTRY=ghcr.io/your-username \
+DOCKER_TAG=v1.0.0 \
+./scripts/docker-deploy.sh all
+```
+
 ## Production Environment Variables (NAS + FRP)
 
 Set these on the gateway service process:

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import { Monitor, ShieldAlert } from 'lucide-react'
+import { Monitor, ShieldAlert, WifiOff, RefreshCw } from 'lucide-react'
+import { Button } from '../../components/ui/button'
 import type { WsMessage } from '@wsctl/core'
 import { useKeyboardBridge, type HidKeyEventPayload } from '../input/useKeyboardBridge'
 import { useTouchBridge } from '../input/useTouchBridge'
@@ -12,11 +13,13 @@ type Props = {
   send: (msg: WsMessage) => void
   rendererRef: RefObject<CanvasRenderer>
   noPadding?: boolean
+  onReconnect?: () => void
 }
 
-export function DeviceCanvas({ send, rendererRef, noPadding }: Props) {
+export function DeviceCanvas({ send, rendererRef, noPadding, onReconnect }: Props) {
   const selectedDeviceKey = useDeviceStore((s) => s.selectedDeviceKey)
   const videoSize = useDeviceStore((s) => s.videoSize)
+  const streamLost = useDeviceStore((s) => s.streamLost)
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
@@ -123,7 +126,30 @@ export function DeviceCanvas({ send, rendererRef, noPadding }: Props) {
               height: `${fit.height}px`,
             }}
           />
-          {secureScreen && (
+          {streamLost && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/75 px-6 text-center">
+              <WifiOff className="h-10 w-10 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium text-white">连接已中断</p>
+                <p className="mt-1 text-xs text-white/70">
+                  设备可能已断开或进入休眠，可尝试重新连接
+                </p>
+              </div>
+              {onReconnect && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="gap-2"
+                  onClick={onReconnect}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  重新连接
+                </Button>
+              )}
+            </div>
+          )}
+          {secureScreen && !streamLost && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/60 px-6 text-center">
               <ShieldAlert className="h-8 w-8 text-amber-400" />
               <p className="text-sm font-medium text-white">安全界面，Android 禁止投屏</p>

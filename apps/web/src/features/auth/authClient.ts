@@ -19,6 +19,12 @@ export const login = async (payload: LoginPayload): Promise<{ username: string }
     throw new Error('登录失败，请检查账号密码')
   }
 
-  const body = (await response.json()) as { data: { username: string } }
-  return body.data
+  const body = (await response.json()) as { data: { username: string; csrfToken?: string } }
+  const user = await fetchMe()
+  if (!user) {
+    throw new Error(
+      '登录成功但会话未生效。若通过 HTTP 访问 NAS，请将服务端 COOKIE_SECURE 设为 false，并确认 ALLOWED_ORIGINS 包含当前访问地址',
+    )
+  }
+  return user
 }

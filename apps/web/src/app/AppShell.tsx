@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 import { Wifi, WifiOff, Loader2, LogOut, Settings, User } from 'lucide-react'
 import type { WsMessage } from '@wsctl/core'
 import { DeviceListPanel } from '../features/devices/DeviceListPanel'
@@ -34,7 +35,11 @@ const statusConfig = {
   disconnected: { label: '未连接', variant: 'destructive' as const, Icon: WifiOff },
 }
 
-export function AppShell() {
+type AppShellProps = {
+  onSessionInvalid?: () => void
+}
+
+export function AppShell({ onSessionInvalid }: AppShellProps) {
   const status = useConnectionStore((s) => s.status)
   const username = useConnectionStore((s) => s.username)
   const cfg = statusConfig[status]
@@ -50,7 +55,7 @@ export function AppShell() {
   const rendererRef = useRef(new CanvasRenderer())
   const decoderRef = useRef<H264Decoder | null>(null)
 
-  const { handleWsMessage, requestDeviceList } = useDeviceList()
+  const { handleWsMessage, requestDeviceList, refreshDeviceList, refreshing } = useDeviceList()
 
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${MD_BREAKPOINT - 1}px)`)
@@ -85,7 +90,18 @@ export function AppShell() {
     decoderRef.current?.feed(data)
   }, [])
 
-  const { send } = useWsConnection({ onMessage, onBinary })
+  const onWsAuthFailure = useCallback(() => {
+    toast.error('WebSocket 未认证', {
+      description: '请检查 COOKIE_SECURE 是否与访问协议匹配（HTTP 需设为 false）',
+    })
+    onSessionInvalid?.()
+  }, [onSessionInvalid])
+
+  const { send } = useWsConnection({
+    onMessage,
+    onBinary,
+    onAuthFailure: onWsAuthFailure,
+  })
 
   const sendRef = useRef(send)
   sendRef.current = send
@@ -114,6 +130,8 @@ export function AppShell() {
 
   const handleDeviceSelect = useCallback(
     (serial: string, config?: DeviceConfig) => {
+      useDeviceStore.getState().setLastConnect({ serial, config })
+      useDeviceStore.getState().setStreamLost(false)
       sendRef.current({
         event: 'device/connect',
         data: { serial, config },
@@ -125,9 +143,19 @@ export function AppShell() {
     []
   )
 
+  const handleReconnect = useCallback(() => {
+    const { lastConnect } = useDeviceStore.getState()
+    if (!lastConnect) return
+    useDeviceStore.getState().setStreamLost(false)
+    sendRef.current({
+      event: 'device/connect',
+      data: { serial: lastConnect.serial, config: lastConnect.config },
+    })
+  }, [])
+
   const handleDeviceRefresh = useCallback(() => {
-    requestDeviceList(sendRef.current)
-  }, [requestDeviceList])
+    refreshDeviceList(sendRef.current)
+  }, [refreshDeviceList])
 
   const handleMobileBack = useCallback(() => {
     sendRef.current({ event: 'device/disconnect' })
@@ -162,6 +190,7 @@ export function AppShell() {
                 <DeviceListPanel
                   onDeviceSelect={handleDeviceSelect}
                   onRefresh={handleDeviceRefresh}
+                  refreshing={refreshing}
                 />
               </div>
             </>
@@ -170,6 +199,7 @@ export function AppShell() {
               send={send}
               rendererRef={rendererRef}
               onBack={handleMobileBack}
+              onReconnect={handleReconnect}
             />
           )}
         </div>
@@ -218,11 +248,12 @@ export function AppShell() {
             <DeviceListPanel
               onDeviceSelect={handleDeviceSelect}
               onRefresh={handleDeviceRefresh}
+              refreshing={refreshing}
             />
           </aside>
 
           <main className="flex-1">
-            <DeviceCanvas send={send} rendererRef={rendererRef} />
+            <DeviceCanvas send={send} rendererRef={rendererRef} onReconnect={handleReconnect} />
           </main>
 
           <aside className="w-80 shrink-0 border-l border-border">
@@ -238,10 +269,12 @@ function MobileCanvasView({
   send,
   rendererRef,
   onBack,
+  onReconnect,
 }: {
   send: (msg: WsMessage) => void
   rendererRef: React.RefObject<CanvasRenderer>
   onBack: () => void
+  onReconnect: () => void
 }) {
   const selectedDeviceKey = useDeviceStore((s) => s.selectedDeviceKey)
   const devices = useDeviceStore((s) => s.devices)
@@ -256,7 +289,7 @@ function MobileCanvasView({
         send={send}
       />
       <div className="min-h-0 flex-1">
-        <DeviceCanvas send={send} rendererRef={rendererRef} noPadding />
+        <DeviceCanvas send={send} rendererRef={rendererRef} noPadding onReconnect={onReconnect} />
       </div>
       <MobileQuickActionBar send={send} />
     </div>

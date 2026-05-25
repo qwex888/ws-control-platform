@@ -1,7 +1,10 @@
 import type { Duplex } from 'node:stream'
 import net from 'node:net'
 import { execSync } from 'node:child_process'
+import { promisify } from 'node:util'
 import { getAdbClient } from './client'
+
+const sleep = promisify(setTimeout)
 import { DEFAULT_DEVICE_CONFIG } from '@wsctl/core'
 
 export type ScrcpyOptions = {
@@ -25,6 +28,56 @@ const DEVICE_SERVER_PATH = '/data/local/tmp/scrcpy-server.jar'
 function randomScidHex(): string {
   const num = Math.floor(Math.random() * 0x7FFF_FFFF)
   return num.toString(16).padStart(8, '0')
+}
+
+export async function cleanupStaleScrcpy(serial: string): Promise<void> {
+  try {
+    execSync(`adb -s ${serial} shell pkill -f scrcpy`, { stdio: 'ignore', timeout: 5000 })
+  } catch {
+    // no stale process
+  }
+
+  try {
+    const list = execSync('adb forward --list', { encoding: 'utf-8', timeout: 5000 })
+    for (const line of list.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed || !trimmed.startsWith(serial)) continue
+      const match = trimmed.match(/tcp:(\d+)/)
+      if (match) {
+        removeForward(serial, Number(match[1]))
+      }
+    }
+  } catch {
+    // best-effort
+  }
+
+  await sleep(500)
+}
+
+export async function startScrcpyServerWithRetry(
+  serial: string,
+  options: ScrcpyOptions = {},
+  maxAttempts = 2,
+): Promise<ScrcpyConnection> {
+  let lastError: unknown
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      if (attempt > 1) {
+        console.log(`[scrcpy] retry attempt ${attempt}/${maxAttempts} for ${serial}`)
+        await cleanupStaleScrcpy(serial)
+      }
+      return await startScrcpyServer(serial, options)
+    } catch (err) {
+      lastError = err
+      console.warn(`[scrcpy] start attempt ${attempt} failed:`, err)
+      if (attempt < maxAttempts) {
+        await cleanupStaleScrcpy(serial)
+      }
+    }
+  }
+
+  throw lastError
 }
 
 export async function pushScrcpyServer(serial: string, localPath: string): Promise<void> {

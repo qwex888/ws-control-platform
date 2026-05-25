@@ -5,6 +5,8 @@ export type WsClientOptions = {
   onMessage: (msg: WsMessage) => void
   onBinary: (data: ArrayBuffer) => void
   onStatusChange: (status: 'connecting' | 'connected' | 'disconnected') => void
+  /** WS 因未登录被服务端关闭 (4001) 时调用，不应再自动重连 */
+  onAuthFailure?: () => void
   reconnectDelayMs?: number
   maxReconnectDelayMs?: number
 }
@@ -21,9 +23,12 @@ export function createWsClient(options: WsClientOptions): WsClient {
     onMessage,
     onBinary,
     onStatusChange,
+    onAuthFailure,
     reconnectDelayMs = 1000,
     maxReconnectDelayMs = 30000,
   } = options
+
+  const WS_CLOSE_UNAUTHORIZED = 4001
 
   let ws: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -50,16 +55,30 @@ export function createWsClient(options: WsClientOptions): WsClient {
         } catch {
           return
         }
+        if (msg.event === 'heartbeat/ping') {
+          send({ event: 'heartbeat/pong' })
+          return
+        }
         onMessage(msg)
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       ws = null
       onStatusChange('disconnected')
-      if (!intentionalClose) {
-        scheduleReconnect()
+      if (intentionalClose) return
+
+      if (event.code === WS_CLOSE_UNAUTHORIZED) {
+        intentionalClose = true
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer)
+          reconnectTimer = null
+        }
+        onAuthFailure?.()
+        return
       }
+
+      scheduleReconnect()
     }
 
     ws.onerror = () => {

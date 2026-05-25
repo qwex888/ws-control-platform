@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { signAccessToken } from './jwt'
+import { getCookieOptions, loadHttpSecurityConfig } from '../config/httpSecurity'
 
 const getAuthConfig = () => {
   const username = process.env.AUTH_USERNAME
@@ -36,18 +37,18 @@ authRouter.post('/login', (req, res) => {
 
   const token = signAccessToken({ sub: username })
   const csrfToken = randomBytes(24).toString('hex')
-  const secureCookie = process.env.COOKIE_SECURE === 'true'
+  const cookieOptions = getCookieOptions(loadHttpSecurityConfig())
 
   res.cookie('access_token', token, {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: secureCookie,
+    sameSite: cookieOptions.sameSite,
+    secure: cookieOptions.secure,
     path: '/',
   })
   res.cookie('csrf_token', csrfToken, {
     httpOnly: false,
-    sameSite: 'lax',
-    secure: secureCookie,
+    sameSite: cookieOptions.sameSite,
+    secure: cookieOptions.secure,
     path: '/',
   })
 
@@ -55,7 +56,14 @@ authRouter.post('/login', (req, res) => {
 })
 
 authRouter.post('/logout', (_req, res) => {
-  res.clearCookie('access_token', { path: '/' })
-  res.clearCookie('csrf_token', { path: '/' })
+  const cookieOptions = getCookieOptions(loadHttpSecurityConfig())
+  const clearOptions = {
+    path: '/',
+    secure: cookieOptions.secure,
+    sameSite: cookieOptions.sameSite,
+  }
+
+  res.clearCookie('access_token', clearOptions)
+  res.clearCookie('csrf_token', clearOptions)
   res.json({ success: true, data: null, error: null })
 })
