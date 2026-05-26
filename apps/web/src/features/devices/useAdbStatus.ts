@@ -50,5 +50,21 @@ export function useAdbStatus() {
     }
   }, [])
 
-  return { status, loading, refresh, connectDevice }
+  const removeDevice = useCallback(async (serial: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await apiFetch('/api/device/remove', {
+        method: 'POST',
+        body: JSON.stringify({ serial }),
+      })
+      const json = await res.json()
+      return {
+        success: json.success ?? false,
+        message: json.error ?? 'OK',
+      }
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }, [])
+
+  return { status, loading, refresh, connectDevice, removeDevice }
 }

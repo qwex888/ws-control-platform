@@ -1,5 +1,6 @@
-import { RefreshCw, Settings, Smartphone, Plus, Wifi } from 'lucide-react'
+import { RefreshCw, Settings, Smartphone, Plus, Wifi, Trash2 } from 'lucide-react'
 import { useState, useCallback } from 'react'
+import { toast } from 'sonner'
 import { ScrollArea } from '../../components/ui/scroll-area'
 import { Button } from '../../components/ui/button'
 import { Badge } from '../../components/ui/badge'
@@ -16,11 +17,12 @@ import { useDeviceConfig, type DeviceConfig } from './useDeviceConfig'
 import { useAdbStatus } from './useAdbStatus'
 import { cn } from '../../lib/utils'
 
-function DeviceCard({ device, selected, onSelect, onSettings }: {
+function DeviceCard({ device, selected, onSelect, onSettings, onDelete }: {
   device: DeviceInfo
   selected: boolean
   onSelect: () => void
   onSettings: (e: React.MouseEvent) => void
+  onDelete: (e: React.MouseEvent) => void
 }) {
   const key = makeDeviceKey(device)
   return (
@@ -77,10 +79,20 @@ function DeviceCard({ device, selected, onSelect, onSettings }: {
               tabIndex={0}
               onClick={onSettings}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSettings(e as unknown as React.MouseEvent) } }}
-              className="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-secondary cursor-pointer"
+              className="shrink-0 rounded p-1 hover:bg-secondary cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
               aria-label="设备设置"
             >
-              <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+              <Settings className="h-3.5 w-3.5" />
+            </div>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={onDelete}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onDelete(e as unknown as React.MouseEvent) } }}
+              className="shrink-0 rounded p-1 hover:bg-destructive/10 cursor-pointer text-muted-foreground hover:text-destructive transition-colors"
+              aria-label="删除设备"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
             </div>
           </div>
         </div>
@@ -107,7 +119,7 @@ export function DeviceListPanel({ onDeviceSelect, onRefresh, refreshing = false 
   const [configTarget, setConfigTarget] = useState<DeviceInfo | null>(null)
   const [currentConfig, setCurrentConfig] = useState<DeviceConfig>({ ...DEFAULT_DEVICE_CONFIG })
   const { fetchConfig, saveConfig, loading } = useDeviceConfig()
-  const { status: adbStatus, connectDevice } = useAdbStatus()
+  const { status: adbStatus, connectDevice, removeDevice } = useAdbStatus()
   const [addDeviceOpen, setAddDeviceOpen] = useState(false)
 
   const handleRefresh = () => {
@@ -141,6 +153,17 @@ export function DeviceListPanel({ onDeviceSelect, onRefresh, refreshing = false 
     e.stopPropagation()
     openConfig(device)
   }, [openConfig])
+
+  const handleDeleteClick = useCallback(async (e: React.MouseEvent, device: DeviceInfo) => {
+    e.stopPropagation()
+    const result = await removeDevice(device.serial)
+    if (result.success) {
+      toast.success(`已移除设备 ${device.name}`)
+      setTimeout(() => onRefresh(), 300)
+    } else {
+      toast.error('移除设备失败', { description: result.message })
+    }
+  }, [removeDevice, onRefresh])
 
   const handleConfigConfirm = useCallback(async (config: DeviceConfig) => {
     if (!configTarget) return
@@ -213,6 +236,7 @@ export function DeviceListPanel({ onDeviceSelect, onRefresh, refreshing = false 
                   selected={selectedDeviceKey === key}
                   onSelect={() => handleSelect(device)}
                   onSettings={(e) => handleSettingsClick(e, device)}
+                  onDelete={(e) => handleDeleteClick(e, device)}
                 />
               )
             })

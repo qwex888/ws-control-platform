@@ -7,6 +7,13 @@ import { getAdbClient } from './client'
 const sleep = promisify(setTimeout)
 import { DEFAULT_DEVICE_CONFIG } from '@wsctl/core'
 
+/**
+ * ADB forward 绑定的主机地址。
+ * 当 ADB_MODE=host 时，adb server 运行在宿主机上，
+ * forward 端口监听在宿主机而非容器内。
+ */
+const ADB_FORWARD_HOST = process.env.ADB_HOST || '127.0.0.1'
+
 export type ScrcpyOptions = {
   maxSize?: number
   bitrate?: number
@@ -31,14 +38,16 @@ function randomScidHex(): string {
 }
 
 export async function cleanupStaleScrcpy(serial: string): Promise<void> {
+  const adbHost = process.env.ADB_HOST ? `-H ${process.env.ADB_HOST}` : ''
+
   try {
-    execSync(`adb -s ${serial} shell pkill -f scrcpy`, { stdio: 'ignore', timeout: 5000 })
+    execSync(`adb ${adbHost} -s ${serial} shell pkill -f scrcpy`, { stdio: 'ignore', timeout: 5000 })
   } catch {
     // no stale process
   }
 
   try {
-    const list = execSync('adb forward --list', { encoding: 'utf-8', timeout: 5000 })
+    const list = execSync(`adb ${adbHost} forward --list`, { encoding: 'utf-8', timeout: 5000 })
     for (const line of list.split('\n')) {
       const trimmed = line.trim()
       if (!trimmed || !trimmed.startsWith(serial)) continue
@@ -101,12 +110,11 @@ export async function startScrcpyServer(
   const captureMode = options.captureMode ?? 'mirror'
   const virtualDisplay = options.virtualDisplay || ''
   const scidHex = randomScidHex()
-  const localPort = await findFreePort()
 
   const socketName = `localabstract:scrcpy_${scidHex}`
 
+  const localPort = await setupForward(serial, socketName)
   console.log(`[scrcpy] forward tcp:${localPort} → ${socketName}`)
-  await client.forward(serial, `tcp:${localPort}`, socketName)
 
   const args = [
     `CLASSPATH=${DEVICE_SERVER_PATH}`,
@@ -215,7 +223,7 @@ function connectStable(
 
     function tryConnect() {
       attempt++
-      const socket = net.connect({ port, host: '127.0.0.1' })
+      const socket = net.connect({ port, host: ADB_FORWARD_HOST })
       let settled = false
 
       const fail = (reason: string) => {
@@ -253,6 +261,29 @@ function connectStable(
   })
 }
 
+/**
+ * 设置 ADB forward 并返回分配的本地端口。
+ *
+ * 当 ADB server 在远程主机上时（ADB_MODE=host），使用 `tcp:0`
+ * 让 ADB server 自动分配端口，然后从 forward 列表中解析实际端口。
+ * 本地模式下依然使用 findFreePort 明确指定端口号。
+ */
+async function setupForward(serial: string, socketName: string): Promise<number> {
+  const client = getAdbClient()
+  const isRemoteAdb = ADB_FORWARD_HOST !== '127.0.0.1' && ADB_FORWARD_HOST !== 'localhost'
+
+  if (isRemoteAdb) {
+    await client.forward(serial, 'tcp:0', socketName)
+    const port = await resolveForwardedPort(serial, socketName)
+    if (!port) throw new Error(`[scrcpy] failed to resolve forwarded port for ${socketName}`)
+    return port
+  }
+
+  const port = await findFreePort()
+  await client.forward(serial, `tcp:${port}`, socketName)
+  return port
+}
+
 function findFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer()
@@ -269,9 +300,34 @@ function findFreePort(): Promise<number> {
   })
 }
 
+/**
+ * 从 `adb forward --list` 中解析指定 socket 对应的本地端口。
+ */
+function resolveForwardedPort(serial: string, socketName: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    try {
+      const adbHost = process.env.ADB_HOST ? `-H ${process.env.ADB_HOST}` : ''
+      const list = execSync(`adb ${adbHost} forward --list`, { encoding: 'utf-8', timeout: 5000 })
+      for (const line of list.split('\n')) {
+        if (line.includes(serial) && line.includes(socketName)) {
+          const match = line.match(/tcp:(\d+)/)
+          if (match) {
+            resolve(Number(match[1]))
+            return
+          }
+        }
+      }
+      resolve(null)
+    } catch {
+      resolve(null)
+    }
+  })
+}
+
 function removeForward(serial: string, port: number) {
   try {
-    execSync(`adb -s ${serial} forward --remove tcp:${port}`, { stdio: 'ignore' })
+    const adbHost = process.env.ADB_HOST ? `-H ${process.env.ADB_HOST}` : ''
+    execSync(`adb ${adbHost} -s ${serial} forward --remove tcp:${port}`, { stdio: 'ignore' })
   } catch {
     // best-effort cleanup
   }

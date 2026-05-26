@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { DeviceConnectStatus, WsMessage } from '@wsctl/core'
 import { useDeviceStore, mapAdbTypeToStatus, type DeviceInfo, type DeviceStatus } from '../../store/deviceStore'
 
 const REFRESH_TIMEOUT_MS = 5000
+const AUTH_POLL_INTERVAL_MS = 3000
 
 const PROGRESS_TOAST: Partial<Record<DeviceConnectStatus, { message: string; description?: string }>> = {
   checking: { message: '正在检测设备状态…' },
@@ -46,6 +47,8 @@ export function useDeviceList() {
   const setStreamLost = useDeviceStore((s) => s.setStreamLost)
   const [refreshing, setRefreshing] = useState(false)
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const authPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const sendRef = useRef<((msg: WsMessage) => void) | null>(null)
 
   const clearRefreshTimer = useCallback(() => {
     if (refreshTimer.current) {
@@ -53,6 +56,30 @@ export function useDeviceList() {
       refreshTimer.current = null
     }
   }, [])
+
+  const stopAuthPoll = useCallback(() => {
+    if (authPollRef.current) {
+      clearInterval(authPollRef.current)
+      authPollRef.current = null
+    }
+  }, [])
+
+  const startAuthPoll = useCallback((send: (msg: WsMessage) => void) => {
+    sendRef.current = send
+    if (authPollRef.current) return
+    authPollRef.current = setInterval(() => {
+      const devices = useDeviceStore.getState().devices
+      const hasUnauthorized = devices.some((d) => d.status === 'unauthorized')
+      if (hasUnauthorized && sendRef.current) {
+        sendRef.current({ event: 'device/list' })
+      } else if (!hasUnauthorized && authPollRef.current) {
+        clearInterval(authPollRef.current)
+        authPollRef.current = null
+      }
+    }, AUTH_POLL_INTERVAL_MS)
+  }, [])
+
+  useEffect(() => stopAuthPoll, [stopAuthPoll])
 
   const handleWsMessage = useCallback(
     (msg: WsMessage) => {
@@ -70,6 +97,11 @@ export function useDeviceList() {
           }
         })
         setDevices(devices)
+
+        const hasUnauthorized = devices.some((d) => d.status === 'unauthorized')
+        if (hasUnauthorized && sendRef.current) {
+          startAuthPoll(sendRef.current)
+        }
 
         if (refreshTimer.current) {
           clearRefreshTimer()
@@ -142,11 +174,12 @@ export function useDeviceList() {
         })
       }
     },
-    [setDevices, updateDeviceStatus, clearRefreshTimer, setStreamLost]
+    [setDevices, updateDeviceStatus, clearRefreshTimer, setStreamLost, startAuthPoll]
   )
 
   const requestDeviceList = useCallback(
     (send: (msg: WsMessage) => void) => {
+      sendRef.current = send
       send({ event: 'device/list' })
     },
     []
@@ -167,5 +200,5 @@ export function useDeviceList() {
     [clearRefreshTimer]
   )
 
-  return { handleWsMessage, requestDeviceList, refreshDeviceList, refreshing, updateDeviceStatus }
+  return { handleWsMessage, requestDeviceList, refreshDeviceList, refreshing, updateDeviceStatus, startAuthPoll, stopAuthPoll }
 }

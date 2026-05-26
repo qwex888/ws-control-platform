@@ -144,5 +144,39 @@ export const createDeviceRouter = (repo: DeviceConfigRepo, options?: DeviceRoute
     }
   })
 
+  router.post('/remove', async (req, res) => {
+    const serial = String(req.body?.serial ?? '').trim()
+    if (!serial) {
+      res.status(400).json({ success: false, data: null, error: 'MISSING_SERIAL' })
+      return
+    }
+
+    const user = (req as { user?: { username: string } }).user
+    const userId = user?.username ?? 'dev'
+
+    const isWireless = serial.includes(':')
+    let disconnectResult: { success: boolean; message: string } | null = null
+
+    if (isWireless) {
+      try {
+        disconnectResult = await disconnectWireless(serial)
+      } catch (err) {
+        disconnectResult = { success: false, message: String(err) }
+      }
+    }
+
+    repo.deleteBySerial(userId, serial)
+
+    if (options?.onDeviceListChanged) {
+      setTimeout(() => options.onDeviceListChanged!(), 500)
+    }
+
+    res.json({
+      success: true,
+      data: { disconnectResult, configRemoved: true },
+      error: null,
+    })
+  })
+
   return router
 }

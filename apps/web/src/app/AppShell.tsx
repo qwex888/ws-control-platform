@@ -244,7 +244,7 @@ export function AppShell({ onSessionInvalid }: AppShellProps) {
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <aside className="w-64 shrink-0 border-r border-border">
+          <aside className="w-300px shrink-0 border-r border-border">
             <DeviceListPanel
               onDeviceSelect={handleDeviceSelect}
               onRefresh={handleDeviceRefresh}

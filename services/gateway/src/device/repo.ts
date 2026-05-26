@@ -81,6 +81,19 @@ export class DeviceConfigRepo {
     return { ...record, config: { ...record.config } }
   }
 
+  deleteBySerial(userId: string, serial: string): boolean {
+    const prefix = `${userId}::${serial}::`
+    let deleted = false
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix)) {
+        this.store.delete(key)
+        deleted = true
+      }
+    }
+    if (deleted) this.scheduleSave()
+    return deleted
+  }
+
   destroy(): void {
     if (this.writeTimer) {
       clearTimeout(this.writeTimer)

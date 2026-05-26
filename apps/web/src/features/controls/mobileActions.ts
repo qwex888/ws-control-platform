@@ -21,8 +21,8 @@ export type MobileActionDef = {
 }
 
 export const MOBILE_ACTIONS: MobileActionDef[] = [
-  { id: 'home', label: 'Home', icon: Home },
   { id: 'back', label: 'Back', icon: ArrowLeft },
+  { id: 'home', label: 'Home', icon: Home },
   { id: 'recent', label: 'Recent', icon: LayoutGrid },
   { id: 'menu', label: 'Menu', icon: AppWindow },
   { id: 'power', label: 'Power', icon: Power },
@@ -38,7 +38,7 @@ export const MOBILE_ACTIONS: MobileActionDef[] = [
 
 /** 移动端画布底部常驻快捷操作 */
 export const MOBILE_QUICK_ACTIONS: MobileActionDef[] = MOBILE_ACTIONS.filter((action) =>
-  (['home', 'back', 'recent', 'lang-toggle'] as const).includes(
-    action.id as 'home' | 'back' | 'recent' | 'lang-toggle'
+  (['back', 'home', 'recent', 'lang-toggle'] as const).includes(
+    action.id as 'back' | 'home' | 'recent' | 'lang-toggle'
   )
 )

@@ -110,13 +110,14 @@ export function DeviceCanvas({ send, rendererRef, noPadding, onReconnect }: Prop
       aria-label="Device canvas"
     >
       {isConnected && fit.width > 0 ? (
-        <div className="relative">
+        <div className="relative no-context-menu">
           <canvas
             ref={canvasCallbackRef}
             width={videoSize.width}
             height={videoSize.height}
             tabIndex={0}
             className={cn(
+              'no-context-menu',
               noPadding
                 ? 'cursor-crosshair'
                 : 'rounded-lg border border-border shadow-lg shadow-black/20 cursor-crosshair focus-visible:ring-2 focus-visible:ring-ring'
